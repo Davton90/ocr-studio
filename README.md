@@ -132,6 +132,27 @@ Catatan: varian `small` (default upstream) ternyata **6–7× lebih lambat** di 
 
 ---
 
+## Format yang didukung
+
+**Gambar** — 45 format (semua diuji end-to-end lewat API):
+
+| Kategori | Format |
+|---|---|
+| Umum | PNG, JPEG (`.jpg` `.jpeg` `.jfif`), WebP, BMP, TIFF, GIF |
+| Modern | **AVIF**, **JPEG XL** (`.jxl`), **HEIC/HEIF** (foto iPhone), JPEG 2000 (`.jp2`) |
+| Langka | QOI, PSD, TGA, PCX, DDS, ICO, PNM/PPM/PGM/PBM, XBM, XPM |
+| Dokumen | **PDF** (multi-halaman, dirender lewat PDFium) |
+
+HEIC dan JPEG XL butuh plugin tambahan (`pillow-heif`, `pillow-jxl-plugin`) yang sudah ikut di `requirements.txt` dan di dalam exe. Kalau plugin tidak ada, aplikasi tetap jalan dengan 43 format bawaan Pillow.
+
+Catatan:
+- Gambar beranimasi (GIF/WebP/AVIF) hanya **frame pertama** yang diproses.
+- Orientasi EXIF (foto HP yang miring) otomatis diperbaiki.
+- SVG tidak didukung — perlu rasterisasi dulu.
+- Ukuran dipotong ke maksimal 2000 px sisi terpanjang sebelum OCR, demi kecepatan.
+
+---
+
 ## Fitur
 
 - **Drag & drop**, klik pilih file, atau **Ctrl+V** tempel dari clipboard (screenshot langsung)

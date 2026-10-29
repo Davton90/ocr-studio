@@ -37,6 +37,28 @@ SAMPLES = BASE / "samples"
 MAX_SIDE = 2000  # downscale anything larger before OCR (CPU friendly)
 
 
+def _register_optional_formats() -> None:
+    """Enable formats that Pillow does not ship by default.
+
+    HEIC/HEIF is the default format on iPhones, JPEG XL is the newer
+    lossless codec. Both are optional: if the plugin is missing the rest of
+    the app keeps working with the 43 formats Pillow supports natively.
+    """
+    try:
+        import pillow_heif
+
+        pillow_heif.register_heif_opener()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import pillow_jxl  # noqa: F401  (importing it registers the plugin)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+_register_optional_formats()
+
+
 def _model_dir() -> Path:
     """Writable model cache, pre-filled from the bundled models on first run."""
     root = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "OCRStudio" / "models"
@@ -191,8 +213,13 @@ ENGINE = OcrEngine()
 def _decode_image(data: bytes) -> np.ndarray:
     try:
         im = Image.open(io.BytesIO(data))
+        im.load()
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(400, f"gambar tidak bisa dibaca: {exc}") from exc
+        raise HTTPException(
+            400,
+            f"Format gambar tidak dikenali ({exc}). Yang didukung: PNG, JPEG, WebP, "
+            "AVIF, JXL, HEIC, TIFF, BMP, GIF, JPEG 2000, QOI, PSD, TGA, PCX, DDS, ICO.",
+        ) from exc
     im = ImageOps.exif_transpose(im).convert("RGB")
     if max(im.size) > MAX_SIDE:
         im.thumbnail((MAX_SIDE, MAX_SIDE), Image.LANCZOS)

@@ -7,18 +7,30 @@ startup ~2-3 s instead of ~10-20 s, at the cost of shipping a folder
 instead of a single file.
 """
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 datas = []
 datas += collect_data_files("rapidocr", includes=["*.yaml"])
 datas += collect_data_files("webview")
+
+# pillow-heif / pillow-jxl ship native DLLs (libheif, libjxl) that the default
+# hooks do not pick up
+binaries = []
+plugin_hidden = []
+for _pkg in ("pillow_heif", "pillow_jxl"):
+    _d, _b, _h = collect_all(_pkg)
+    datas += _d
+    binaries += _b
+    plugin_hidden += _h
 datas += [
     ("web", "web"),
     ("samples", "samples"),
     ("assets/models", "models"),
 ]
 
-hiddenimports = collect_submodules("rapidocr") + collect_submodules("webview") + [
+hiddenimports = collect_submodules("rapidocr") + collect_submodules("webview") + plugin_hidden + [
+    "pillow_heif",
+    "pillow_jxl",
     "clr",
     "clr_loader",
     "pythonnet",
@@ -43,7 +55,7 @@ hiddenimports = collect_submodules("rapidocr") + collect_submodules("webview") +
 a = Analysis(
     ["desktop.py"],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

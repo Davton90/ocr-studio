@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec - builds a single-file OCR-Studio.exe."""
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 datas = []
 # rapidocr reads config.yaml / default_models.yaml at runtime (not .onnx, those
@@ -9,13 +9,25 @@ datas = []
 datas += collect_data_files("rapidocr", includes=["*.yaml"])
 # pywebview ships the WebView2 interop assemblies next to the package
 datas += collect_data_files("webview")
+
+# pillow-heif / pillow-jxl ship native DLLs (libheif, libjxl) that the default
+# hooks do not pick up
+binaries = []
+plugin_hidden = []
+for _pkg in ("pillow_heif", "pillow_jxl"):
+    _d, _b, _h = collect_all(_pkg)
+    datas += _d
+    binaries += _b
+    plugin_hidden += _h
 datas += [
     ("web", "web"),
     ("samples", "samples"),
     ("assets/models", "models"),
 ]
 
-hiddenimports = collect_submodules("rapidocr") + collect_submodules("webview") + [
+hiddenimports = collect_submodules("rapidocr") + collect_submodules("webview") + plugin_hidden + [
+    "pillow_heif",
+    "pillow_jxl",
     "clr",
     "clr_loader",
     "pythonnet",
@@ -40,7 +52,7 @@ hiddenimports = collect_submodules("rapidocr") + collect_submodules("webview") +
 a = Analysis(
     ["desktop.py"],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

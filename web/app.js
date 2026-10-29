@@ -125,7 +125,7 @@ async function refreshStatus() {
 function addFiles(fileList) {
   const incoming = Array.from(fileList).filter((f) => {
     const ok = f.type.startsWith("image/") || f.type === "application/pdf" ||
-      /\.(png|jpe?g|webp|bmp|tiff?|gif|pdf)$/i.test(f.name);
+      /\.(png|jpe?g|jfif|webp|avif|jxl|heic|heif|bmp|dib|tiff?|gif|jp2|j2k|jpf|qoi|psd|tga|pcx|dds|ico|pnm|ppm|pgm|pbm|xbm|xpm|pdf)$/i.test(f.name);
     if (!ok) toast(`"${f.name}" bukan gambar/PDF`);
     return ok;
   });
