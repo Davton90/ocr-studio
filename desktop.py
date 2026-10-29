@@ -18,7 +18,23 @@ from pathlib import Path
 
 import uvicorn
 
-from server import FROZEN, app, _free_port
+from server import FROZEN, app, _free_port, _is_ours
+
+
+def _focus_existing() -> bool:
+    """Bring the already-running window to the front, if there is one."""
+    try:
+        import ctypes
+
+        u = ctypes.windll.user32
+        hwnd = u.FindWindowW(None, "OCR Studio")
+        if hwnd:
+            u.ShowWindow(hwnd, 9)  # SW_RESTORE
+            u.SetForegroundWindow(hwnd)
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    return False
 
 
 def _wait_ready(port: int, timeout: float = 90.0) -> bool:
@@ -64,6 +80,12 @@ def _window_geometry() -> tuple[int, int, int, int]:
 
 
 def main() -> None:
+    # second double-click: focus the window that is already open
+    if _is_ours(8848):
+        if not _focus_existing():
+            webbrowser.open("http://127.0.0.1:8848")
+        return
+
     if FROZEN:
         log = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "OCRStudio" / "app.log"
         try:
