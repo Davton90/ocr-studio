@@ -13,7 +13,7 @@ Ada dua bentuk build. Isinya sama persis — bedanya cuma kecepatan start.
 | | Portable (folder) | Satu file |
 |---|---|---|
 | Lokasi | `dist\OCR-Studio-portable\OCR-Studio.exe` | `dist\OCR-Studio.exe` |
-| Ukuran | 217 MB (folder) | 90 MB (satu file) |
+| Ukuran | 257 MB (folder) | 101 MB (satu file) |
 | Start sampai jendela muncul | **~5 s** | ~12 s |
 | Cocok untuk | dipakai sehari-hari | kirim lewat chat / flashdisk |
 
@@ -35,7 +35,7 @@ Bisa ditaruh di flashdisk dan dijalankan di komputer lain tanpa install apa pun.
 dist\OCR-Studio.exe
 ```
 
-Satu file 90 MB yang mengekstrak dirinya ke folder temp setiap kali dijalankan — itu sebabnya start-nya lebih lambat.
+Satu file 101 MB yang mengekstrak dirinya ke folder temp setiap kali dijalankan — itu sebabnya start-nya lebih lambat.
 
 Keduanya:
 - Tidak butuh Python, tidak butuh internet (model sudah ikut di dalam)
@@ -59,7 +59,7 @@ Mesin OCR hidup di ekosistem Python, sedangkan UI paling enak dibangun dengan HT
 - Browser hanya lapisan tampilan; kalau mau, mode browser juga tersedia (lihat bagian 2).
 - Alternatif "native murni" (Qt/Tkinter) akan menambah **60–80 MB** ke exe. WebView2 hanya menambah **2 MB** karena engine-nya sudah bagian dari Windows.
 
-#### Isi di dalam exe (90 MB terkompresi → 215 MB saat diekstrak)
+#### Isi di dalam exe (101 MB terkompresi → 257 MB saat diekstrak)
 
 | Komponen | Ukuran | Peran |
 |---|---:|---|
@@ -73,6 +73,8 @@ Mesin OCR hidup di ekosistem Python, sedangkan UI paling enak dibangun dengan HT
 | FastAPI + Uvicorn | 5.5 MB | server lokal |
 | Shapely | 4 MB | geometri kotak teks |
 | pywebview + pythonnet | 2 MB | jendela native (WebView2) |
+| pillow-heif + libheif | 3 MB | decode HEIC/HEIF (foto iPhone) |
+| pillow-jxl + libjxl | 11 MB | decode JPEG XL |
 | RapidOCR | 0.1 MB | pipeline deteksi → klasifikasi → rekognisi |
 | UI web | 0.2 MB | HTML/CSS/JS |
 
@@ -189,7 +191,7 @@ Angka ini akan jauh lebih cepat di mesin dengan core lebih banyak.
 ocr-studio/
 ├─ dist/
 │  ├─ OCR-Studio-portable/  # build onedir (start ~5 s)
-│  └─ OCR-Studio.exe        # build onefile 90 MB
+│  └─ OCR-Studio.exe        # build onefile 101 MB
 ├─ build.bat              # build onefile
 ├─ build-portable.bat     # build onedir
 ├─ build.spec             # konfigurasi PyInstaller (onefile)
@@ -264,7 +266,7 @@ Untuk versi source, model tersimpan di `.venv\Lib\site-packages\rapidocr\models\
 | Masalah | Solusi |
 |---|---|
 | `start.bat` langsung tertutup | jalankan `start.bat` dari Command Prompt untuk lihat error |
-| Exe terasa lama terbuka | normal 6–10 s (ekstrak 215 MB). Pakai `start.bat` kalau ingin start instan |
+| Exe terasa lama terbuka | normal 6–10 s (ekstrak 257 MB). Pakai `start.bat` kalau ingin start instan |
 | Jendela tidak muncul | WebView2 butuh Windows 10/11 terbaru; kalau gagal, aplikasi otomatis membuka browser. Log: `%LOCALAPPDATA%\OCRStudio\app.log` |
 | Exe tidak mau jalan / langsung hilang | cek `%LOCALAPPDATA%\OCRStudio\app.log` |
 | Windows Defender memblokir exe | umum untuk PyInstaller tanpa code signing — pilih "More info → Run anyway", atau jalankan dari source |
