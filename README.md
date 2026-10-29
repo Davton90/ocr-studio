@@ -69,6 +69,7 @@ Mesin OCR hidup di ekosistem Python, sedangkan UI paling enak dibangun dengan HT
 | Pillow | 13 MB | decode gambar, EXIF, encode preview |
 | PDFium | 7 MB | render halaman PDF |
 | **Model OCR** (det + rec + cls) | 6.9 MB | **bobot model PP-OCRv6 tiny** |
+| **Model Indra** (det, rec, order, orient, script) | 8.8 MB | **bobot engine Indra OCR** |
 | Python interpreter | 6 MB | runtime |
 | FastAPI + Uvicorn | 5.5 MB | server lokal |
 | Shapely | 4 MB | geometri kotak teks |
@@ -110,7 +111,25 @@ Butuh `.venv` (dibuat otomatis oleh `start.bat`) dan PyInstaller (dipasang otoma
 
 ## Model yang dipakai
 
-**PP-OCRv6 (tiny) — deteksi + pengenalan**, dijalankan lewat **RapidOCR 3.10** di atas **ONNX Runtime**.
+Ada **dua engine** yang bisa dipilih dari dropdown *Model* di pojok kanan atas. Keduanya ONNX Runtime, keduanya offline.
+
+| | **Indra** (default baru) | **PP-OCRv6 tiny** |
+|---|---|---|
+| Pembuat | Datalab | PaddlePaddle / Baidu |
+| Ukuran model | 8.8 MB | 7 MB |
+| Waktu OCR (PNG 900×380, 2 core) | **1.55 s** | 3.9 s |
+| Akurasi (contoh uji) | **99.1%** | 97.9% |
+| Kotak per baris | ✅ | ✅ |
+| Heading / layout / reading order | ✅ | ❌ |
+| Output Markdown | ✅ | ❌ |
+| Auto-rotate | otomatis | lewat model `cls` |
+| Lisensi model | OpenRAIL-M (cek dulu untuk komersial) | Apache-2.0 |
+
+> **Indra** = 1M-parameter recognition model dari Datalab, dirancang khusus untuk CPU. Di mesin 2-core ini ia **2,5× lebih cepat** dan sedikit lebih akurat, plus memberi struktur dokumen (heading, list, urutan baca) yang bisa langsung diekspor ke Markdown. Modelnya dari [datalab-to/indra-ocr](https://huggingface.co/datalab-to/indra-ocr), lisensi **OpenRAIL-M** — baca dulu ketentuannya sebelum dipakai komersial.
+
+### PP-OCRv6 (tiny) — deteksi + pengenalan
+
+Dijalankan lewat **RapidOCR 3.10** di atas **ONNX Runtime**.
 
 | Komponen | Ukuran | Peran |
 |---|---|---|
@@ -129,6 +148,7 @@ Total < 10 MB, dan mendukung 100+ bahasa dalam satu model — termasuk **Indones
 | **Tesseract 5** | paling ringan, tapi akurasi di foto miring/noise jauh di bawah model deep learning |
 | **DeepSeek-OCR, PaddleOCR-VL, dots.ocr, olmOCR** | VLM 0.9–3B parameter — butuh GPU, 8–24 GB VRAM. Tidak realistis di CPU |
 | **RapidOCR + PP-OCRv6** ✅ | ONNX, ~35 MB total dependency, akurasi setara PaddleOCR, jalan di 2 core |
+| **Indra OCR** ✅ | 8.8 MB, CPU-first, 2,5× lebih cepat dari PP-OCRv6 di mesin ini, plus layout & markdown |
 
 Catatan: varian `small` (default upstream) ternyata **6–7× lebih lambat** di mesin ini (18 s vs 2.8 s) dengan hasil yang sama pada uji coba. Karena itu `tiny` jadi default — bisa diganti lewat dropdown di pojok kanan atas.
 
@@ -161,7 +181,7 @@ Catatan:
 - **Gambar & PDF** (multi-halaman, dengan navigasi halaman)
 - **Overlay kotak deteksi** berwarna sesuai confidence — arahkan kursor untuk lihat teks + skor, klik untuk lompat ke baris
 - **Zoom canvas** sampai 800% — scroll untuk zoom di titik kursor, drag untuk menggeser, tombol `− / % / +` di header, atau `+` `-` `0` di keyboard
-- Panel hasil: **Teks** (bisa diedit) dan **Baris** (per baris + skor)
+- Panel hasil: **Teks** (bisa diedit), **Baris** (per baris + skor), dan **Markdown** (muncul otomatis saat memakai engine Indra)
 - **Ekspor** `.txt`, `.md`, `.json`, `.csv` (CSV memuat koordinat kotak)
 - **Salin** ke clipboard sekali klik
 - Ganti model **tiny / small / medium** saat runtime, plus toggle **auto-rotate**

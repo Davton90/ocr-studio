@@ -58,6 +58,12 @@ def _register_optional_formats() -> None:
 
 _register_optional_formats()
 
+# Indra OCR ships its own ONNX bundle; point the package at the copy shipped
+# with the app instead of the HuggingFace cache, so it works offline.
+_INDRA_DIR = BASE / "assets" / "indra"
+if _INDRA_DIR.is_dir():
+    os.environ.setdefault("INDRA_OCR_MODEL_DIR", str(_INDRA_DIR))
+
 
 def _model_dir() -> Path:
     """Writable model cache, pre-filled from the bundled models on first run."""
@@ -75,9 +81,10 @@ def _model_dir() -> Path:
     return root
 
 VARIANTS = {
-    "tiny": {"label": "Tiny", "note": "~1.5 MB det + ~5 MB rec · tercepat"},
-    "small": {"label": "Small", "note": "~10 MB det + ~21 MB rec · default upstream"},
-    "medium": {"label": "Medium", "note": "paling akurat · paling lambat di CPU"},
+    "tiny": {"label": "Tiny", "note": "PP-OCRv6 · ~7 MB · cepat"},
+    "small": {"label": "Small", "note": "PP-OCRv6 · ~31 MB · default upstream"},
+    "medium": {"label": "Medium", "note": "PP-OCRv6 · paling akurat, paling lambat"},
+    "indra": {"label": "Indra", "note": "Datalab · 8.8 MB · tercepat + layout/markdown"},
 }
 
 
@@ -85,14 +92,15 @@ VARIANTS = {
 # Engine manager
 # --------------------------------------------------------------------------- #
 class OcrEngine:
-    """Lazily builds and caches one RapidOCR instance per configuration."""
+    """Lazily builds and caches one engine instance per configuration."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()          # serialises inference (2-core box)
         self._build_lock = threading.Lock()
         self._engine = None
+        self._kind = "rapid"                   # rapid | indra
         self._key: tuple[str, bool] | None = None
-        self.variant = "tiny"
+        self.variant = "indra"
         self.use_cls = True                    # +50 ms, fixes upside-down scans
         self.state = "idle"                    # idle | loading | ready | error
         self.error: str | None = None
@@ -101,6 +109,12 @@ class OcrEngine:
 
     # -- lifecycle ---------------------------------------------------------
     def _build(self, variant: str, use_cls: bool):
+        if variant == "indra":
+            import indra_ocr
+
+            threads = max(1, min(4, os.cpu_count() or 2))
+            return indra_ocr.load(threads=threads)
+
         from rapidocr import RapidOCR
         from rapidocr.utils.typings import ModelType, OCRVersion
 
@@ -136,12 +150,14 @@ class OcrEngine:
             t0 = time.perf_counter()
             try:
                 engine = self._build(self.variant, self.use_cls)
-                engine(np.full((64, 256, 3), 255, dtype=np.uint8))  # warm-up
+                if self.variant != "indra":
+                    engine(np.full((64, 256, 3), 255, dtype=np.uint8))  # warm-up
             except Exception as exc:  # noqa: BLE001
                 self.state = "error"
                 self.error = f"{type(exc).__name__}: {exc}"
                 raise
             self._engine = engine
+            self._kind = "indra" if self.variant == "indra" else "rapid"
             self._key = key
             self.loaded_ms = (time.perf_counter() - t0) * 1000
             self.state = "ready"
@@ -159,9 +175,58 @@ class OcrEngine:
         self.ensure()
         with self._lock:
             t0 = time.perf_counter()
-            res = self._engine(bgr)
+            if self._kind == "indra":
+                out = self._run_indra(bgr)
+            else:
+                out = self._run_rapid(bgr)
             elapsed = (time.perf_counter() - t0) * 1000
         self.last_ms = elapsed
+        out["elapsed_ms"] = round(elapsed)
+        return out
+
+    def _run_indra(self, bgr: np.ndarray) -> dict[str, Any]:
+        """Indra reads from a path, so hand it a short-lived temp file."""
+        import tempfile
+
+        fd, path = tempfile.mkstemp(suffix=".png", prefix="ocrstudio_")
+        try:
+            os.close(fd)
+            cv2.imwrite(path, bgr)
+            pages = list(self._engine.convert(path))
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+        if not pages:
+            return {"lines": [], "text": "", "markdown": "", "stages_ms": {}}
+
+        _, page = pages[0]
+        lines = []
+        for ln in page.lines:
+            x0, y0, x1, y1 = (float(v) for v in ln.box)
+            lines.append({
+                "text": ln.text,
+                "score": round(float(ln.conf), 4),
+                "box": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
+            })
+
+        timings = page.timings or {}
+        stages = {
+            k: round(float(v))  # indra already reports milliseconds (*_ms keys)
+            for k, v in timings.items()
+            if isinstance(v, (int, float))
+        }
+        return {
+            "lines": lines,
+            "text": flow_text(lines),
+            "markdown": page.markdown or "",
+            "stages_ms": stages,
+        }
+
+    def _run_rapid(self, bgr: np.ndarray) -> dict[str, Any]:
+        res = self._engine(bgr)
 
         txts = () if res.txts is None else tuple(res.txts)
         scores = res.scores if res.scores is not None else [0.0] * len(txts)
@@ -182,7 +247,7 @@ class OcrEngine:
         return {
             "lines": lines,
             "text": flow_text(lines),
-            "elapsed_ms": round(elapsed),
+            "markdown": "",
             "stages_ms": stages,
         }
 

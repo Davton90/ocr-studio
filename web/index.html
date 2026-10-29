@@ -26,9 +26,10 @@
     <label class="field">
       <span>Model</span>
       <select id="variant">
-        <option value="tiny">Tiny — tercepat</option>
-        <option value="small">Small — seimbang</option>
-        <option value="medium">Medium — akurat</option>
+        <option value="tiny">Tiny — PP-OCRv6, cepat</option>
+        <option value="small">Small — PP-OCRv6, seimbang</option>
+        <option value="medium">Medium — PP-OCRv6, akurat</option>
+        <option value="indra">Indra — tercepat + layout</option>
       </select>
     </label>
     <label class="switch" title="Deteksi teks terbalik 180°">
@@ -118,6 +119,7 @@
     <div class="tabs">
       <button class="tab active" data-tab="text">Teks</button>
       <button class="tab" data-tab="lines">Baris</button>
+      <button class="tab" data-tab="md" id="tabMdBtn" hidden>Markdown</button>
     </div>
 
     <div class="tab-body" id="tabText">
@@ -128,6 +130,10 @@
       <ul class="lines" id="lineList">
         <li class="queue-empty">Belum ada hasil.</li>
       </ul>
+    </div>
+
+    <div class="tab-body" id="tabMd" hidden>
+      <pre id="mdOut" class="md-out"></pre>
     </div>
 
     <div class="actions">

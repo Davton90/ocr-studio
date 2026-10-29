@@ -46,6 +46,8 @@ const els = {
   stats: $("#stats"),
   textOut: $("#textOut"),
   lineList: $("#lineList"),
+  tabMdBtn: $("#tabMdBtn"),
+  mdOut: $("#mdOut"),
   copyBtn: $("#copyBtn"),
   dlBtn: $("#dlBtn"),
   dlMenu: $("#dlMenu"),
@@ -91,6 +93,18 @@ const currentPage = () => {
   return f && f.pages.length ? f.pages[state.pageIdx] || null : null;
 };
 
+function syncEngineUi(variant) {
+  const isIndra = variant === "indra";
+  const sw = els.useCls.closest(".switch");
+  els.useCls.disabled = isIndra;
+  if (sw) {
+    sw.classList.toggle("off", isIndra);
+    sw.title = isIndra
+      ? "Indra sudah menangani orientasi halaman sendiri"
+      : "Deteksi teks terbalik 180°";
+  }
+}
+
 /* ------------------------------------------------------------------ status */
 async function refreshStatus() {
   try {
@@ -100,6 +114,7 @@ async function refreshStatus() {
     els.useCls.checked = s.use_cls;
     state.variant = s.variant;
     state.useCls = s.use_cls;
+    syncEngineUi(s.variant);
 
     if (s.state === "ready") {
       els.status.className = "status ready";
@@ -452,6 +467,12 @@ function renderResults() {
   }
 
   els.textOut.value = page.text || "";
+
+  const md = page.markdown || "";
+  els.mdOut.textContent = md;
+  els.tabMdBtn.hidden = !md;
+  if (!md && els.tabMdBtn.classList.contains("active")) showTab("text");
+
   els.lineList.innerHTML = "";
   if (!page.lines.length) {
     els.lineList.innerHTML = '<li class="queue-empty">Tidak ada teks terdeteksi.</li>';
@@ -494,7 +515,9 @@ function buildExport(fmt) {
     return { name: `${base}.txt`, mime: "text/plain;charset=utf-8", body };
   }
   if (fmt === "md") {
-    const body = `# ${f.name}\n\n` + f.pages.map((p) => `## Halaman ${p.index}\n\n${p.text}`).join("\n\n");
+    const body = `# ${f.name}\n\n` + f.pages
+      .map((p) => `## Halaman ${p.index}\n\n${p.markdown || p.text}`)
+      .join("\n\n");
     return { name: `${base}.md`, mime: "text/markdown;charset=utf-8", body };
   }
   if (fmt === "json") {
@@ -540,6 +563,15 @@ function download(fmt) {
 }
 
 /* ----------------------------------------------------------------- events */
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach((t) => {
+    t.classList.toggle("active", t.dataset.tab === name);
+  });
+  $("#tabText").hidden = name !== "text";
+  $("#tabLines").hidden = name !== "lines";
+  $("#tabMd").hidden = name !== "md";
+}
+
 function bind() {
   els.dropzone.onclick = () => els.fileInput.click();
   els.dropzone.onkeydown = (e) => {
@@ -688,13 +720,7 @@ function bind() {
   window.addEventListener("resize", () => drawOverlay());
 
   document.querySelectorAll(".tab").forEach((tab) => {
-    tab.onclick = () => {
-      document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
-      tab.classList.add("active");
-      const name = tab.dataset.tab;
-      $("#tabText").hidden = name !== "text";
-      $("#tabLines").hidden = name !== "lines";
-    };
+    tab.onclick = () => showTab(tab.dataset.tab);
   });
 
   els.copyBtn.onclick = async () => {
@@ -736,6 +762,9 @@ async function applyConfig(payload) {
     const data = await r.json();
     if (!data.ok) throw new Error(data.error || "gagal");
     toast(`Model ${data.variant} siap (${Math.round(data.loaded_ms)} ms)`);
+    // re-run the current file so the visible result matches the new engine
+    const f = currentFile();
+    if (f && f.file) processFile(f);
   } catch (err) {
     toast(`Gagal ganti model: ${err.message}`, 4000);
   } finally {

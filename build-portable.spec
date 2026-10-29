@@ -26,9 +26,10 @@ datas += [
     ("web", "web"),
     ("samples", "samples"),
     ("assets/models", "models"),
+    ("assets/indra", "assets/indra"),
 ]
 
-hiddenimports = collect_submodules("rapidocr") + collect_submodules("webview") + plugin_hidden + [
+hiddenimports = collect_submodules("rapidocr") + collect_submodules("webview") + collect_submodules("indra_ocr") + plugin_hidden + [
     "pillow_heif",
     "pillow_jxl",
     "clr",
