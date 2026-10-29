@@ -8,21 +8,38 @@ Aplikasi OCR lokal: taruh gambar atau PDF, dapat teks + kotak deteksi. Jalan 100
 
 ## Cara menjalankan
 
-### 1. Versi `.exe` (tanpa install apa pun)
+Ada dua bentuk build. Isinya sama persis — bedanya cuma kecepatan start.
+
+| | Portable (folder) | Satu file |
+|---|---|---|
+| Lokasi | `dist\OCR-Studio-portable\OCR-Studio.exe` | `dist\OCR-Studio.exe` |
+| Ukuran | 217 MB (folder) | 90 MB (satu file) |
+| Start sampai jendela muncul | **~5 s** | ~12 s |
+| Cocok untuk | dipakai sehari-hari | kirim lewat chat / flashdisk |
+
+### 1. Versi portable (disarankan)
+
+```
+dist\OCR-Studio-portable\OCR-Studio.exe
+```
+
+Dobel-klik → jendela aplikasi muncul. File pendukung ada di folder `_internal` di sebelah exe, jadi **folder ini harus disalin utuh** (jangan pisahkan exe-nya).
+
+Bisa ditaruh di flashdisk dan dijalankan di komputer lain tanpa install apa pun.
+
+### 2. Versi satu file
 
 ```
 dist\OCR-Studio.exe
 ```
 
-Dobel-klik → jendela aplikasi sendiri muncul (bukan tab browser). Tidak ada jendela konsol.
+Satu file 90 MB yang mengekstrak dirinya ke folder temp setiap kali dijalankan — itu sebabnya start-nya lebih lambat.
 
-- Portable — satu file, bisa disalin ke flashdisk atau mesin lain
+Keduanya:
 - Tidak butuh Python, tidak butuh internet (model sudah ikut di dalam)
-- Jendela native pakai **WebView2** yang sudah ada di Windows 10/11 — tidak menambah browser baru
+- Jendela native pakai **WebView2** yang sudah ada di Windows 10/11
 - Dobel-klik dua kali tidak bikin dua instance: yang kedua langsung keluar
 - Model di-cache di `%LOCALAPPDATA%\OCRStudio\models`, log di `%LOCALAPPDATA%\OCRStudio\app.log`
-
-> Startup 6–10 detik karena file 90 MB diekstrak ke folder temp tiap kali dijalankan. Ini normal untuk build *onefile*.
 
 #### Kenapa UI-nya HTML tapi jendelanya native?
 
@@ -61,7 +78,7 @@ Jadi **mesin OCR-nya sendiri hanya ~46 MB** (ONNX Runtime + model + pipeline). S
 
 > `opencv_videoio_ffmpeg` (31 MB) sengaja dibuang dari build karena hanya dipakai untuk membaca file video, sementara aplikasi ini hanya memproses gambar dan PDF.
 
-### 2. Dari source (lebih cepat start)
+### 3. Dari source
 
 ```
 start.bat
@@ -76,13 +93,14 @@ Jendela aplikasi langsung terbuka. Atau manual:
 
 Kalau port 8848 dipakai, aplikasi pindah sendiri ke 8849/8850.
 
-### Membangun ulang `.exe`
+### Membangun ulang
 
 ```
-build.bat
+build-portable.bat    :: -> dist\OCR-Studio-portable\   (onedir, start cepat)
+build.bat             :: -> dist\OCR-Studio.exe         (onefile, satu file)
 ```
 
-Butuh `.venv` (dibuat otomatis oleh `start.bat`). Hasil: `dist\OCR-Studio.exe`.
+Butuh `.venv` (dibuat otomatis oleh `start.bat`) dan PyInstaller (dipasang otomatis oleh skrip build).
 
 ---
 
@@ -132,6 +150,8 @@ Catatan: varian `small` (default upstream) ternyata **6–7× lebih lambat** di 
 | PNG 900×380 (6 baris) | **2.6–3.2 s** |
 | PDF A4 per halaman (1191×1684) | **~4.8 s** |
 | Muat model pertama kali | ~3 s |
+| Start portable (onedir) sampai jendela muncul | **~5 s** |
+| Start satu file (onefile) sampai jendela muncul | ~12 s |
 
 Angka ini akan jauh lebih cepat di mesin dengan core lebih banyak.
 
@@ -143,9 +163,13 @@ Angka ini akan jauh lebih cepat di mesin dengan core lebih banyak.
 
 ```
 ocr-studio/
-├─ dist/OCR-Studio.exe    # hasil build: aplikasi portable 90 MB
-├─ build.bat              # bangun ulang exe (PyInstaller)
-├─ build.spec             # konfigurasi PyInstaller
+├─ dist/
+│  ├─ OCR-Studio-portable/  # build onedir (start ~5 s)
+│  └─ OCR-Studio.exe        # build onefile 90 MB
+├─ build.bat              # build onefile
+├─ build-portable.bat     # build onedir
+├─ build.spec             # konfigurasi PyInstaller (onefile)
+├─ build-portable.spec    # konfigurasi PyInstaller (onedir)
 ├─ start.bat              # launcher dari source (buat venv otomatis)
 ├─ desktop.py             # entry point: jendela native (WebView2)
 ├─ server.py              # FastAPI + manajer engine OCR (juga mode browser)
