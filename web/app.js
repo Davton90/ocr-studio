@@ -11,7 +11,14 @@ const state = {
   variant: "tiny",
   useCls: false,
   busy: false,
+  zoom: 1,
 };
+
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 8;
+const ZOOM_STEP = 1.25;
+let zoomKey = "";
+let panEndedAt = 0;
 
 const els = {
   queue: $("#queue"),
@@ -32,6 +39,10 @@ const els = {
   prevPage: $("#prevPage"),
   nextPage: $("#nextPage"),
   pageLabel: $("#pageLabel"),
+  zoombar: $("#zoombar"),
+  zoomIn: $("#zoomIn"),
+  zoomOut: $("#zoomOut"),
+  zoomReset: $("#zoomReset"),
   stats: $("#stats"),
   textOut: $("#textOut"),
   lineList: $("#lineList"),
@@ -159,6 +170,8 @@ async function processFile(entry) {
     if (!state.activeId || entry.id === state.activeId) {
       state.activeId = entry.id;
       state.pageIdx = 0;
+      state.zoom = 1;
+      zoomKey = "";
       renderAll();
     }
   } catch (err) {
@@ -176,6 +189,8 @@ function selectFile(id) {
   state.activeId = id;
   state.pageIdx = 0;
   state.activeLine = null;
+  state.zoom = 1;
+  zoomKey = "";
   renderAll();
 }
 
@@ -239,12 +254,14 @@ function renderViewer() {
     els.stage.hidden = true;
     els.fileTitle.textContent = f ? f.name : "Belum ada berkas dipilih";
     els.pager.hidden = true;
+    els.zoombar.hidden = true;
     els.stats.innerHTML = '<span class="chip muted">siap</span>';
     return;
   }
 
   els.emptyState.hidden = true;
   els.stage.hidden = false;
+  els.zoombar.hidden = false;
   els.fileTitle.textContent = f.name;
 
   const multi = f.pages.length > 1;
@@ -273,25 +290,70 @@ function renderViewer() {
   `;
 }
 
-/* --------------------------------------------------------------- overlay */
-function fitStage() {
+/* ------------------------------------------------------------------ zoom */
+function fitScale() {
   const img = els.stageImg;
-  if (!img.naturalWidth) return;
   const pad = 28;
   const availW = Math.max(els.viewerBody.clientWidth - pad, 80);
   const availH = Math.max(els.viewerBody.clientHeight - pad, 80);
-  const scale = Math.min(availW / img.naturalWidth, availH / img.naturalHeight, 1.6);
-  img.style.width = `${Math.round(img.naturalWidth * scale)}px`;
-  img.style.height = `${Math.round(img.naturalHeight * scale)}px`;
+  return Math.min(availW / img.naturalWidth, availH / img.naturalHeight, 1.6);
 }
 
+function applyZoom() {
+  const img = els.stageImg;
+  if (!img.naturalWidth) return;
+
+  const scale = fitScale() * state.zoom;
+  const w = Math.round(img.naturalWidth * scale);
+  const h = Math.round(img.naturalHeight * scale);
+  const key = `${w}x${h}`;
+  if (key !== zoomKey) {
+    zoomKey = key;
+    img.style.width = `${w}px`;
+    img.style.height = `${h}px`;
+  }
+
+  els.viewerBody.classList.toggle("zoomed", state.zoom > 1.001);
+  els.zoomReset.textContent = `${Math.round(state.zoom * 100)}%`;
+  els.zoomOut.disabled = state.zoom <= ZOOM_MIN + 0.001;
+  els.zoomIn.disabled = state.zoom >= ZOOM_MAX - 0.001;
+}
+
+function setZoom(next, clientX, clientY) {
+  const img = els.stageImg;
+  const body = els.viewerBody;
+  if (!img.naturalWidth) return;
+
+  next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
+  if (Math.abs(next - state.zoom) < 1e-4) return;
+
+  // remember which point of the image sits under the cursor
+  const r0 = img.getBoundingClientRect();
+  const box = body.getBoundingClientRect();
+  const cx = clientX ?? box.left + box.width / 2;
+  const cy = clientY ?? box.top + box.height / 2;
+  const fx = r0.width ? (cx - r0.left) / r0.width : 0.5;
+  const fy = r0.height ? (cy - r0.top) / r0.height : 0.5;
+
+  state.zoom = next;
+  applyZoom();
+
+  // scroll so that same point stays under the cursor
+  const r1 = img.getBoundingClientRect();
+  body.scrollLeft += r1.left + fx * r1.width - cx;
+  body.scrollTop += r1.top + fy * r1.height - cy;
+
+  drawOverlay();
+}
+
+/* --------------------------------------------------------------- overlay */
 function drawOverlay() {
   const page = currentPage();
   const img = els.stageImg;
   const canvas = els.overlay;
   if (!page || !img.clientWidth) return;
 
-  fitStage();
+  applyZoom();
 
   const dpr = window.devicePixelRatio || 1;
   const w = img.clientWidth;
@@ -553,6 +615,9 @@ function bind() {
     if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
     if (e.key === "ArrowLeft") els.prevPage.click();
     if (e.key === "ArrowRight") els.nextPage.click();
+    if (e.key === "+" || e.key === "=") { e.preventDefault(); setZoom(state.zoom * ZOOM_STEP); }
+    if (e.key === "-" || e.key === "_") { e.preventDefault(); setZoom(state.zoom / ZOOM_STEP); }
+    if (e.key === "0") { e.preventDefault(); setZoom(ZOOM_MIN); }
   });
 
   els.overlay.addEventListener("mousemove", (e) => {
@@ -569,6 +634,7 @@ function bind() {
     drawOverlay();
   });
   els.overlay.addEventListener("click", (e) => {
+    if (Date.now() - panEndedAt < 150) return; // was a pan, not a click
     const idx = hitTest(e.clientX, e.clientY);
     if (idx === null) return;
     state.activeLine = state.activeLine === idx ? null : idx;
@@ -577,6 +643,47 @@ function bind() {
     const row = els.lineList.children[idx];
     if (row) row.scrollIntoView({ block: "nearest", behavior: "smooth" });
   });
+
+  /* ---- zoom ---- */
+  els.viewerBody.addEventListener("wheel", (e) => {
+    if (!currentPage()) return;
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+    setZoom(state.zoom * factor, e.clientX, e.clientY);
+  }, { passive: false });
+
+  els.zoomIn.onclick = () => setZoom(state.zoom * ZOOM_STEP);
+  els.zoomOut.onclick = () => setZoom(state.zoom / ZOOM_STEP);
+  els.zoomReset.onclick = () => setZoom(ZOOM_MIN);
+
+  /* ---- drag to pan (only when zoomed in) ---- */
+  let drag = null;
+  els.viewerBody.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !currentPage() || state.zoom <= 1.001) return;
+    drag = {
+      x: e.clientX, y: e.clientY,
+      sl: els.viewerBody.scrollLeft, st: els.viewerBody.scrollTop,
+    };
+    els.viewerBody.classList.add("panning");
+    showTip(0, 0, null);
+  });
+  els.viewerBody.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) panEndedAt = Date.now();
+    els.viewerBody.scrollLeft = drag.sl - dx;
+    els.viewerBody.scrollTop = drag.st - dy;
+  });
+  const endDrag = () => {
+    if (!drag) return;
+    drag = null;
+    els.viewerBody.classList.remove("panning");
+    if (Date.now() - panEndedAt < 150) panEndedAt = Date.now();
+  };
+  els.viewerBody.addEventListener("pointerup", endDrag);
+  els.viewerBody.addEventListener("pointercancel", endDrag);
+  els.viewerBody.addEventListener("pointerleave", endDrag);
 
   window.addEventListener("resize", () => drawOverlay());
 

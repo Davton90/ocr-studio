@@ -73,10 +73,17 @@
   <section class="panel viewer">
     <div class="viewer-head">
       <div class="file-title" id="fileTitle">Belum ada berkas dipilih</div>
-      <div class="pager" id="pager" hidden>
-        <button id="prevPage" aria-label="halaman sebelumnya">‹</button>
-        <span id="pageLabel">1 / 1</span>
-        <button id="nextPage" aria-label="halaman berikutnya">›</button>
+      <div class="head-tools">
+        <div class="pager" id="pager" hidden>
+          <button id="prevPage" aria-label="halaman sebelumnya">‹</button>
+          <span id="pageLabel">1 / 1</span>
+          <button id="nextPage" aria-label="halaman berikutnya">›</button>
+        </div>
+        <div class="zoombar" id="zoombar" hidden>
+          <button id="zoomOut" title="Perkecil  (Ctrl + scroll)" aria-label="perkecil">−</button>
+          <button id="zoomReset" title="Reset ke ukuran pas layar">100%</button>
+          <button id="zoomIn" title="Perbesar  (Ctrl + scroll)" aria-label="perbesar">+</button>
+        </div>
       </div>
     </div>
 

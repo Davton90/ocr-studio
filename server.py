@@ -199,12 +199,17 @@ def _decode_image(data: bytes) -> np.ndarray:
     return cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
 
 
-def _preview_data_url(bgr: np.ndarray, max_w: int = 1400) -> str:
+def _preview_data_url(bgr: np.ndarray, max_w: int = MAX_SIDE) -> str:
+    """Encode the page for the viewer.
+
+    Kept at the OCR working resolution so that zooming in the canvas shows real
+    detail instead of an upscaled thumbnail.
+    """
     im = Image.fromarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
     if im.width > max_w:
         im = im.resize((max_w, round(im.height * max_w / im.width)), Image.LANCZOS)
     buf = io.BytesIO()
-    im.save(buf, format="JPEG", quality=88, optimize=True)
+    im.save(buf, format="JPEG", quality=90, optimize=True)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 

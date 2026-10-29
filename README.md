@@ -2,7 +2,7 @@
 
 Aplikasi OCR lokal: taruh gambar atau PDF, dapat teks + kotak deteksi. Jalan 100% offline di CPU, tanpa GPU, tanpa cloud.
 
-![status](https://img.shields.io/badge/model-PP--OCRv6-7c9cff) ![runtime](https://img.shields.io/badge/runtime-ONNX%20Runtime-4ade80) [![release](https://img.shields.io/github/v/release/Davton90/ocr-studio)](https://github.com/Davton90/ocr-studio/releases/latest)
+![status](https://img.shields.io/badge/model-PP--OCRv6-7c9cff) ![runtime](https://img.shields.io/badge/runtime-ONNX%20Runtime-4ade80)
 
 ---
 
@@ -19,13 +19,11 @@ Ada dua bentuk build. Isinya sama persis — bedanya cuma kecepatan start.
 
 ### 1. Versi portable (disarankan)
 
-Unduh dari **[Releases](https://github.com/Davton90/ocr-studio/releases/latest)** (`OCR-Studio-portable-win64.zip`, 94 MB), ekstrak, lalu jalankan `OCR-Studio-portable\OCR-Studio.exe`.
-
-Atau pakai hasil build lokal:
-
 ```
 dist\OCR-Studio-portable\OCR-Studio.exe
 ```
+
+Belum ada? Bangun sendiri dengan `build-portable.bat` (lihat bagian *Membangun ulang*).
 
 Dobel-klik → jendela aplikasi muncul. File pendukung ada di folder `_internal` di sebelah exe, jadi **folder ini harus disalin utuh** (jangan pisahkan exe-nya).
 
@@ -139,6 +137,7 @@ Catatan: varian `small` (default upstream) ternyata **6–7× lebih lambat** di 
 - **Drag & drop**, klik pilih file, atau **Ctrl+V** tempel dari clipboard (screenshot langsung)
 - **Gambar & PDF** (multi-halaman, dengan navigasi halaman)
 - **Overlay kotak deteksi** berwarna sesuai confidence — arahkan kursor untuk lihat teks + skor, klik untuk lompat ke baris
+- **Zoom canvas** sampai 800% — scroll untuk zoom di titik kursor, drag untuk menggeser, tombol `− / % / +` di header, atau `+` `-` `0` di keyboard
 - Panel hasil: **Teks** (bisa diedit) dan **Baris** (per baris + skor)
 - **Ekspor** `.txt`, `.md`, `.json`, `.csv` (CSV memuat koordinat kotak)
 - **Salin** ke clipboard sekali klik
