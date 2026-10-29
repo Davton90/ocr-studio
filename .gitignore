@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Build output (the exe is distributed as a release artifact, not in git)
+build/
+dist/
+
+# Local
+*.log
+.DS_Store
+Thumbs.db

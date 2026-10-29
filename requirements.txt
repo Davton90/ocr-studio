@@ -1,0 +1,11 @@
+rapidocr==3.10.0
+onnxruntime==1.31.1
+opencv-python-headless==5.0.0.93
+pillow==13.0.0
+numpy>=2.0
+pypdfium2==5.14.0
+fastapi==0.129.0
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+pywebview==6.2.1
+pythonnet==3.2.1
