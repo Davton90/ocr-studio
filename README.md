@@ -2,7 +2,7 @@
 
 Aplikasi OCR lokal: taruh gambar atau PDF, dapat teks + kotak deteksi. Jalan 100% offline di CPU, tanpa GPU, tanpa cloud.
 
-![status](https://img.shields.io/badge/model-PP--OCRv6-7c9cff) ![runtime](https://img.shields.io/badge/runtime-ONNX%20Runtime-4ade80)
+![status](https://img.shields.io/badge/model-PP--OCRv6-7c9cff) ![runtime](https://img.shields.io/badge/runtime-ONNX%20Runtime-4ade80) [![release](https://img.shields.io/github/v/release/Davton90/ocr-studio)](https://github.com/Davton90/ocr-studio/releases/latest)
 
 ---
 
@@ -18,6 +18,10 @@ Ada dua bentuk build. Isinya sama persis — bedanya cuma kecepatan start.
 | Cocok untuk | dipakai sehari-hari | kirim lewat chat / flashdisk |
 
 ### 1. Versi portable (disarankan)
+
+Unduh dari **[Releases](https://github.com/Davton90/ocr-studio/releases/latest)** (`OCR-Studio-portable-win64.zip`, 94 MB), ekstrak, lalu jalankan `OCR-Studio-portable\OCR-Studio.exe`.
+
+Atau pakai hasil build lokal:
 
 ```
 dist\OCR-Studio-portable\OCR-Studio.exe
