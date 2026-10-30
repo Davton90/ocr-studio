@@ -523,3 +523,26 @@ button.secondary { background: #1a202c; }
   .topbar { flex-wrap: wrap; height: auto; flex: 0 0 auto; padding: 10px 14px; gap: 10px; }
   .controls { gap: 10px; flex-wrap: wrap; }
 }
+
+/* ---------------- one-time model download card ---------------- */
+.setup-card {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+  width: min(460px, calc(100vw - 40px));
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 16px 44px rgba(0,0,0,0.55);
+  padding: 14px 16px;
+  z-index: 60;
+}
+.sc-title { font-size: 13px; font-weight: 650; margin-bottom: 4px; }
+.sc-msg { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.sc-bar {
+  height: 5px; border-radius: 3px; background: #1a2130;
+  margin: 10px 0 12px; overflow: hidden;
+}
+.sc-bar i {
+  display: block; height: 100%; width: 0%;
+  background: var(--accent); transition: width 0.3s ease;
+}
+.sc-actions { display: flex; gap: 8px; }

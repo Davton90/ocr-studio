@@ -143,6 +143,10 @@ Total < 10 MB, dan mendukung 100+ bahasa dalam satu model — termasuk **Indones
 
 Engine VLM 0,8 B dari ATH-MaaS untuk dokumen sulit — tabel kompleks, KIE, tabel lintas halaman. **Tidak ikut di dalam exe**: bobot dan llama.cpp diunduh sekali ke `%LOCALAPPDATA%\OCRStudio\`.
 
+Cara termudah: pilih **OvisOCR3** di dropdown *Model*. Kalau modelnya belum ada, muncul kartu **"Unduh sekarang"** di bawah layar — klik, tunggu progres bar sampai selesai, aplikasi otomatis mengaktifkan engine-nya. Tidak perlu Python atau terminal.
+
+Alternatif lewat terminal:
+
 ```bat
 .venv\Scripts\python.exe scripts\setup_ovis.py
 ```

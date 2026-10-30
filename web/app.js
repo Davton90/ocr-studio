@@ -48,6 +48,11 @@ const els = {
   lineList: $("#lineList"),
   tabMdBtn: $("#tabMdBtn"),
   mdOut: $("#mdOut"),
+  ovisCard: $("#ovisCard"),
+  ovisMsg: $("#ovisMsg"),
+  ovisBar: $("#ovisBar"),
+  ovisInstall: $("#ovisInstall"),
+  ovisClose: $("#ovisClose"),
   copyBtn: $("#copyBtn"),
   dlBtn: $("#dlBtn"),
   dlMenu: $("#dlMenu"),
@@ -125,7 +130,11 @@ async function refreshStatus() {
       els.statusText.textContent = "memuat model…";
     } else if (s.state === "error") {
       els.status.className = "status error";
-      els.statusText.textContent = s.error || "gagal memuat model";
+      // keep the raw traceback in the tooltip, show a short label
+      els.status.title = s.error || "";
+      els.statusText.textContent = /OvisOCR3 belum/.test(s.error || "")
+        ? "model belum terpasang"
+        : "gagal memuat model";
     } else {
       els.status.className = "status";
       els.statusText.textContent = "model belum dimuat";
@@ -689,6 +698,9 @@ function bind() {
     setZoom(state.zoom * factor, e.clientX, e.clientY);
   }, { passive: false });
 
+  els.ovisInstall.onclick = startOvisInstall;
+  els.ovisClose.onclick = hideOvisCard;
+
   els.zoomIn.onclick = () => setZoom(state.zoom * ZOOM_STEP);
   els.zoomOut.onclick = () => setZoom(state.zoom / ZOOM_STEP);
   els.zoomReset.onclick = () => setZoom(ZOOM_MIN);
@@ -754,6 +766,52 @@ function bind() {
   els.useCls.onchange = () => applyConfig({ use_cls: els.useCls.checked });
 }
 
+let ovisPoll = null;
+
+function showOvisCard() {
+  els.ovisMsg.textContent =
+    "Unduh sekali ~670 MB (llama.cpp + bobot model). Butuh internet, hanya sekali.";
+  els.ovisCard.hidden = false;
+}
+
+function hideOvisCard() {
+  els.ovisCard.hidden = true;
+  if (ovisPoll) { clearInterval(ovisPoll); ovisPoll = null; }
+}
+
+async function startOvisInstall() {
+  els.ovisInstall.disabled = true;
+  els.ovisInstall.textContent = "Mengunduh…";
+  try {
+    await fetch("/api/ovis/install", { method: "POST" });
+  } catch (err) {
+    els.ovisMsg.textContent = "Gagal memulai unduhan: " + err.message;
+    els.ovisInstall.disabled = false;
+    els.ovisInstall.textContent = "Coba lagi";
+    return;
+  }
+  if (ovisPoll) clearInterval(ovisPoll);
+  ovisPoll = setInterval(async () => {
+    try {
+      const s = await (await fetch("/api/ovis/status")).json();
+      els.ovisBar.style.width = `${s.percent}%`;
+      els.ovisMsg.textContent = `${s.message} — ${s.percent}%`;
+      if (s.state === "done") {
+        hideOvisCard();
+        els.ovisInstall.disabled = false;
+        els.ovisInstall.textContent = "Unduh sekarang";
+        toast("Model OvisOCR3 siap dipakai");
+        applyConfig({ variant: "ovis" });
+      } else if (s.state === "error") {
+        els.ovisMsg.textContent = s.message;
+        els.ovisInstall.disabled = false;
+        els.ovisInstall.textContent = "Coba lagi";
+        clearInterval(ovisPoll); ovisPoll = null;
+      }
+    } catch (err) { /* jaringan putus sebentar, coba lagi di tick berikutnya */ }
+  }, 1500);
+}
+
 async function applyConfig(payload) {
   setBusy(true, "Memuat model… (unduhan pertama bisa lama)");
   els.status.className = "status busy";
@@ -771,7 +829,11 @@ async function applyConfig(payload) {
     const f = currentFile();
     if (f && f.file) processFile(f);
   } catch (err) {
-    toast(`Gagal ganti model: ${err.message}`, 4000);
+    if (/OvisOCR3 belum/.test(err.message)) {
+      showOvisCard();
+    } else {
+      toast(`Gagal ganti model: ${err.message}`, 4000);
+    }
   } finally {
     setBusy(false);
     refreshStatus();

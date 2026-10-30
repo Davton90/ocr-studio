@@ -19,8 +19,10 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 import webbrowser
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -172,6 +174,153 @@ def _ovis_parse(raw: str, w: int, h: int) -> dict[str, Any]:
     }
 
 
+class OvisInstaller:
+    """Downloads llama.cpp + the OvisOCR3 weights, with progress for the UI."""
+
+    LLAMA_TAG = "b12001"
+    ZIP = OVIS_HOME / "llama.zip"
+    URL_LLAMA = (
+        f"https://github.com/ggml-org/llama.cpp/releases/download/{LLAMA_TAG}"
+        f"/llama-{LLAMA_TAG}-bin-win-cpu-x64.zip"
+    )
+    URL_MODEL = "https://huggingface.co/mradermacher/OvisOCR3-GGUF/resolve/main/OvisOCR3.Q4_K_M.gguf"
+    URL_MMPROJ = "https://huggingface.co/mradermacher/OvisOCR3-GGUF/resolve/main/OvisOCR3.mmproj-Q8_0.gguf"
+
+    def __init__(self) -> None:
+        self.state = "idle"          # idle | running | done | error
+        self.message = ""
+        self.done = 0
+        self.total = 0
+        self._lock = threading.Lock()
+
+    # -- public ------------------------------------------------------------
+    def status(self) -> dict[str, Any]:
+        pct = 0 if not self.total else min(100, round(self.done / self.total * 100))
+        return {
+            "state": self.state,
+            "message": self.message,
+            "done": self.done,
+            "total": self.total,
+            "percent": pct,
+        }
+
+    def start(self) -> dict[str, Any]:
+        with self._lock:
+            if self.state == "running":
+                return self.status()
+            self.state = "running"
+            self.message = "menyiapkan…"
+            self.done = 0
+            self.total = 0
+        threading.Thread(target=self._run, daemon=True, name="ovis-setup").start()
+        return self.status()
+
+    # -- internals ---------------------------------------------------------
+    @staticmethod
+    def _remote_size(url: str) -> int:
+        """Authoritative file size, so a resumed download knows when to stop."""
+        try:
+            req = urllib.request.Request(
+                url, method="HEAD", headers={"User-Agent": "ocr-studio"}
+            )
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return int(r.headers.get("Content-Length") or 0)
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _targets(self) -> list[tuple[str, Path, str, int]]:
+        out = []
+        for url, dest, label in (
+            (self.URL_LLAMA, self.ZIP, "llama.cpp"),
+            (self.URL_MODEL, OVIS_MODEL, "model Q4_K_M"),
+            (self.URL_MMPROJ, OVIS_MMPROJ, "vision projector"),
+        ):
+            out.append((url, dest, label, self._remote_size(url)))
+        return out
+
+    def _run(self) -> None:
+        try:
+            targets = self._targets()
+            self.total = sum(t[3] for t in targets)
+            if not self.total:
+                self.state = "error"
+                self.message = "tidak bisa membaca ukuran file (offline?)"
+                return
+
+            for url, dest, label, size in targets:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                # llama.cpp counts as done once the binary is extracted
+                already = (
+                    (LLAMA_DIR / "llama-server.exe").exists()
+                    if dest is self.ZIP
+                    else dest.exists() and dest.stat().st_size >= size - 4096
+                )
+                if already:
+                    self._add(size, f"{label} sudah ada")
+                    continue
+                if not self._fetch(url, dest, label, size):
+                    self.state = "error"
+                    self.message = f"gagal mengunduh {label} — coba lagi"
+                    return
+
+            if self.ZIP.exists() and not (LLAMA_DIR / "llama-server.exe").exists():
+                self.message = "mengekstrak llama.cpp…"
+                LLAMA_DIR.mkdir(parents=True, exist_ok=True)
+                with zipfile.ZipFile(self.ZIP) as z:
+                    z.extractall(LLAMA_DIR)
+
+            gaps = OvisBackend().missing()
+            if gaps:
+                self.state = "error"
+                self.message = "belum lengkap: " + ", ".join(gaps)
+                return
+            self.state = "done"
+            self.message = "model OvisOCR3 siap"
+            self.done = self.total
+        except Exception as exc:  # noqa: BLE001
+            self.state = "error"
+            self.message = f"{type(exc).__name__}: {exc}"
+
+    def _add(self, n: int, msg: str) -> None:
+        self.done = min(self.total, self.done + n) if self.total else self.done + n
+        self.message = msg
+
+    def _fetch(self, url: str, dest: Path, label: str, size: int, attempts: int = 60) -> bool:
+        for _ in range(attempts):
+            have = dest.stat().st_size if dest.exists() else 0
+            if have >= size - 4096:
+                return True
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "ocr-studio", "Range": f"bytes={have}-"}
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    mode = "ab" if r.status == 206 else "wb"
+                    base = have if mode == "ab" else 0
+                    if mode == "wb":
+                        self.done = max(0, self.done - have)
+                    with open(dest, mode) as f:
+                        while True:
+                            chunk = r.read(1 << 20)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            base += len(chunk)
+                            self.done += len(chunk)
+                            self.message = f"{label}: {base / 1e6:.0f}/{size / 1e6:.0f} MB"
+            except urllib.error.HTTPError as exc:
+                if exc.code == 416:      # already complete
+                    return True
+                time.sleep(2)
+                continue
+            except Exception:  # noqa: BLE001
+                time.sleep(2)
+                continue
+            if dest.exists() and dest.stat().st_size >= size - 4096:
+                return True
+        return dest.exists() and dest.stat().st_size >= size - 4096
+
+
 class OvisBackend:
     """OvisOCR3 through a local llama.cpp server (CPU only)."""
 
@@ -209,8 +358,7 @@ class OvisBackend:
             gaps = self.missing()
             if gaps:
                 raise RuntimeError(
-                    "OvisOCR3 belum siap — kurang: " + ", ".join(gaps)
-                    + ". Jalankan scripts/setup_ovis.py sekali untuk mengunduh."
+                    "OvisOCR3 belum terpasang (kurang: " + ", ".join(gaps) + ")"
                 )
             self.stop()
             port = _free_port(18499)
@@ -469,6 +617,7 @@ def flow_text(lines: list[dict[str, Any]]) -> str:
 
 
 ENGINE = OcrEngine()
+OVIS_SETUP = OvisInstaller()
 atexit.register(lambda: ENGINE._engine.stop() if isinstance(ENGINE._engine, OvisBackend) else None)
 
 
@@ -562,6 +711,19 @@ def status() -> dict[str, Any]:
             "python": platform.python_version(),
         },
     }
+
+
+@app.post("/api/ovis/install")
+async def ovis_install() -> JSONResponse:
+    """Start (or resume) the one-time download of llama.cpp + OvisOCR3 weights."""
+    return JSONResponse(OVIS_SETUP.start())
+
+
+@app.get("/api/ovis/status")
+async def ovis_status() -> JSONResponse:
+    st = OVIS_SETUP.status()
+    st["ready"] = not OvisBackend().missing()
+    return JSONResponse(st)
 
 
 @app.post("/api/config")
