@@ -7,15 +7,19 @@ JSON API for OCR of images and PDFs.
 
 from __future__ import annotations
 
+import atexit
 import base64
 import io
+import json
 import os
 import platform
 import shutil
 import socket
+import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -85,7 +89,196 @@ VARIANTS = {
     "small": {"label": "Small", "note": "PP-OCRv6 · ~31 MB · default upstream"},
     "medium": {"label": "Medium", "note": "PP-OCRv6 · paling akurat, paling lambat"},
     "indra": {"label": "Indra", "note": "Datalab · 8.8 MB · tercepat + layout/markdown"},
+    "ovis": {"label": "OvisOCR3", "note": "0.8B VLM via llama.cpp · tabel & layout terbaik · lambat di CPU"},
 }
+
+
+# --------------------------------------------------------------------------- #
+# OvisOCR3 via llama.cpp (optional heavy engine)
+# --------------------------------------------------------------------------- #
+OVIS_HOME = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "OCRStudio"
+OVIS_DIR = OVIS_HOME / "ovis"
+LLAMA_DIR = OVIS_HOME / "llama"
+OVIS_MODEL = OVIS_DIR / "OvisOCR3.Q4_K_M.gguf"
+OVIS_MMPROJ = OVIS_DIR / "OvisOCR3.mmproj-Q8_0.gguf"
+
+OVIS_PROMPT = (
+    "Analyze the document structure and extract text content. Return a single JSON "
+    "array in natural reading order.\n\n"
+    "Each element follows this schema:\n"
+    '`{"bbox": [x_min, y_min, x_max, y_max], "category": "string", "content": "string"}`\n\n'
+    "Rules:\n"
+    "1. The bbox coordinates are integers scaled to [0, 1000).\n"
+    "2. The category is exactly one of:\n"
+    '["abstract", "algorithm", "aside_text", "chart", "content", "display_formula", '
+    '"doc_title", "figure_title", "footer", "footer_image", "footnote", "formula_number", '
+    '"header", "header_image", "image", "inline_formula", "number", "paragraph_title", '
+    '"reference_content", "seal", "table", "text", "vertical_text", "vision_footnote"].\n'
+    "3. The content formatting depends on category:\n"
+    '- For "footer_image", "header_image", "image", or "chart": write as an HTML image tag '
+    '<img src="images/bbox_{x_min}_{y_min}_{x_max}_{y_max}.jpg" />.\n'
+    '- For "display_formula" or "inline_formula": write in LaTeX.\n'
+    '- For "table": write as a standard HTML `<table>...</table>`.\n'
+    "- Otherwise: write in Markdown.\n"
+    "4. Output must be strictly valid JSON. Properly escape quotes and special characters "
+    "inside content."
+)
+
+
+def _ovis_parse(raw: str, w: int, h: int) -> dict[str, Any]:
+    """Turn the model's JSON block list into our line/markdown structure."""
+    s = raw.strip()
+    if s.startswith("```"):
+        s = s.split("\n", 1)[-1]
+        if s.rstrip().endswith("```"):
+            s = s.rstrip()[:-3]
+    try:
+        blocks = json.loads(s)
+    except Exception:  # noqa: BLE001
+        blocks = None
+
+    if not isinstance(blocks, list):
+        text = raw.strip()
+        return {"lines": [], "text": text, "markdown": text, "stages_ms": {}}
+
+    lines: list[dict[str, Any]] = []
+    md: list[str] = []
+    for b in blocks:
+        if not isinstance(b, dict):
+            continue
+        content = str(b.get("content") or "").strip()
+        bb = b.get("bbox") or []
+        if content:
+            md.append(content)
+        if len(bb) == 4:
+            try:
+                x0 = float(bb[0]) / 1000 * w
+                y0 = float(bb[1]) / 1000 * h
+                x1 = float(bb[2]) / 1000 * w
+                y1 = float(bb[3]) / 1000 * h
+            except (TypeError, ValueError):
+                continue
+            lines.append({
+                "text": content,
+                "score": None,  # a VLM gives no per-line confidence
+                "box": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
+                "category": b.get("category"),
+            })
+    return {
+        "lines": lines,
+        "text": flow_text([ln for ln in lines if ln["text"]]),
+        "markdown": "\n\n".join(md),
+        "stages_ms": {},
+    }
+
+
+class OvisBackend:
+    """OvisOCR3 through a local llama.cpp server (CPU only)."""
+
+    def __init__(self) -> None:
+        self.proc: subprocess.Popen | None = None
+        self.port: int | None = None
+        self._lock = threading.Lock()
+        self._threads = max(1, min(4, os.cpu_count() or 2))
+
+    def missing(self) -> list[str]:
+        gaps = []
+        if not (LLAMA_DIR / "llama-server.exe").exists():
+            gaps.append("llama-server.exe")
+        if not OVIS_MODEL.exists():
+            gaps.append(OVIS_MODEL.name)
+        if not OVIS_MMPROJ.exists():
+            gaps.append(OVIS_MMPROJ.name)
+        return gaps
+
+    def _healthy(self) -> bool:
+        if not self.port:
+            return False
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{self.port}/health", timeout=2
+            ) as r:
+                return r.status == 200
+        except Exception:  # noqa: BLE001
+            return False
+
+    def ensure(self) -> None:
+        with self._lock:
+            if self.proc and self.proc.poll() is None and self._healthy():
+                return
+            gaps = self.missing()
+            if gaps:
+                raise RuntimeError(
+                    "OvisOCR3 belum siap — kurang: " + ", ".join(gaps)
+                    + ". Jalankan scripts/setup_ovis.py sekali untuk mengunduh."
+                )
+            self.stop()
+            port = _free_port(18499)
+            cmd = [
+                str(LLAMA_DIR / "llama-server.exe"),
+                "--model", str(OVIS_MODEL),
+                "--mmproj", str(OVIS_MMPROJ),
+                "--host", "127.0.0.1",
+                "--port", str(port),
+                "--ctx-size", "8192",
+                "--threads", str(self._threads),
+                "--n-gpu-layers", "0",
+                "--jinja",
+            ]
+            self.proc = subprocess.Popen(
+                cmd, cwd=str(LLAMA_DIR),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            self.port = port
+            deadline = time.time() + 240
+            while time.time() < deadline:
+                if self.proc.poll() is not None:
+                    raise RuntimeError("llama-server berhenti saat start (cek memori/CPU)")
+                if self._healthy():
+                    return
+                time.sleep(0.5)
+            raise RuntimeError("llama-server tidak siap dalam 240 detik")
+
+    def stop(self) -> None:
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=8)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+        self.proc = None
+        self.port = None
+
+    def run(self, bgr: np.ndarray) -> dict[str, Any]:
+        self.ensure()
+        h, w = bgr.shape[:2]
+        ok, buf = cv2.imencode(".png", bgr)
+        if not ok:
+            raise RuntimeError("gagal meng-encode gambar")
+        b64 = base64.b64encode(buf.tobytes()).decode()
+        payload = {
+            "model": "ovis",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": OVIS_PROMPT},
+                    {"type": "image_url",
+                     "image_url": {"url": "data:image/png;base64," + b64}},
+                ],
+            }],
+            "temperature": 0,
+            "max_tokens": 4096,
+        }
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=1800) as r:
+            data = json.loads(r.read())
+        raw = data["choices"][0]["message"]["content"]
+        return _ovis_parse(raw, w, h)
 
 
 # --------------------------------------------------------------------------- #
@@ -109,6 +302,8 @@ class OcrEngine:
 
     # -- lifecycle ---------------------------------------------------------
     def _build(self, variant: str, use_cls: bool):
+        if variant == "ovis":
+            return OvisBackend()
         if variant == "indra":
             import indra_ocr
 
@@ -150,14 +345,16 @@ class OcrEngine:
             t0 = time.perf_counter()
             try:
                 engine = self._build(self.variant, self.use_cls)
-                if self.variant != "indra":
+                if self.variant == "ovis":
+                    engine.ensure()  # boots llama-server, loads the GGUF
+                elif self.variant != "indra":
                     engine(np.full((64, 256, 3), 255, dtype=np.uint8))  # warm-up
             except Exception as exc:  # noqa: BLE001
                 self.state = "error"
                 self.error = f"{type(exc).__name__}: {exc}"
                 raise
             self._engine = engine
-            self._kind = "indra" if self.variant == "indra" else "rapid"
+            self._kind = self.variant if self.variant in ("indra", "ovis") else "rapid"
             self._key = key
             self.loaded_ms = (time.perf_counter() - t0) * 1000
             self.state = "ready"
@@ -175,7 +372,9 @@ class OcrEngine:
         self.ensure()
         with self._lock:
             t0 = time.perf_counter()
-            if self._kind == "indra":
+            if self._kind == "ovis":
+                out = self._engine.run(bgr)
+            elif self._kind == "indra":
                 out = self._run_indra(bgr)
             else:
                 out = self._run_rapid(bgr)
@@ -270,6 +469,7 @@ def flow_text(lines: list[dict[str, Any]]) -> str:
 
 
 ENGINE = OcrEngine()
+atexit.register(lambda: ENGINE._engine.stop() if isinstance(ENGINE._engine, OvisBackend) else None)
 
 
 # --------------------------------------------------------------------------- #

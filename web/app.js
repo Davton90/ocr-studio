@@ -94,13 +94,13 @@ const currentPage = () => {
 };
 
 function syncEngineUi(variant) {
-  const isIndra = variant === "indra";
+  const isIndra = variant === "indra" || variant === "ovis";
   const sw = els.useCls.closest(".switch");
   els.useCls.disabled = isIndra;
   if (sw) {
     sw.classList.toggle("off", isIndra);
     sw.title = isIndra
-      ? "Indra sudah menangani orientasi halaman sendiri"
+      ? "Engine ini sudah menangani orientasi halaman sendiri"
       : "Deteksi teks terbalik 180°";
   }
 }
@@ -290,16 +290,17 @@ function renderViewer() {
   }
   els.stageImg.onload = () => drawOverlay();
 
-  const avg = page.lines.length
-    ? page.lines.reduce((a, l) => a + l.score, 0) / page.lines.length
-    : 0;
+  const scored = page.lines.filter((l) => typeof l.score === "number");
+  const avg = scored.length
+    ? scored.reduce((a, l) => a + l.score, 0) / scored.length
+    : null;
   const stages = Object.entries(page.stages_ms || {})
     .map(([k, v]) => `${k} ${v}ms`).join(" · ");
 
   els.stats.innerHTML = `
     <span class="chip"><b>${page.elapsed_ms}</b> ms</span>
     <span class="chip">${page.lines.length} baris</span>
-    <span class="chip">akurasi ${(avg * 100).toFixed(1)}%</span>
+    ${avg === null ? "" : `<span class="chip">akurasi ${(avg * 100).toFixed(1)}%</span>`}
     <span class="chip">${page.width}×${page.height}</span>
     ${stages ? `<span class="chip muted">${stages}</span>` : ""}
   `;
@@ -389,7 +390,9 @@ function drawOverlay() {
     const isActive = state.activeLine === i;
     const isHover = state.hoverLine === i;
     const score = ln.score;
-    const base = score >= 0.9 ? "74,222,128" : score >= 0.7 ? "251,191,36" : "248,113,113";
+    const base = typeof score !== "number"
+      ? "124,156,255"
+      : score >= 0.9 ? "74,222,128" : score >= 0.7 ? "251,191,36" : "248,113,113";
 
     ctx.beginPath();
     ln.box.forEach(([x, y], k) => {
@@ -447,7 +450,8 @@ function showTip(clientX, clientY, idx) {
   }
   if (idx === null) { tipEl.style.display = "none"; return; }
   const ln = page.lines[idx];
-  tipEl.textContent = `${ln.text}  ·  ${(ln.score * 100).toFixed(1)}%`;
+  tipEl.textContent = ln.text + (typeof ln.score === "number"
+    ? `  ·  ${(ln.score * 100).toFixed(1)}%` : "");
   const rect = els.stage.getBoundingClientRect();
   tipEl.style.display = "block";
   const x = Math.min(clientX - rect.left + 12, rect.width - tipEl.offsetWidth - 4);
@@ -482,11 +486,12 @@ function renderResults() {
   page.lines.forEach((ln, i) => {
     const li = document.createElement("li");
     li.className = "line" + (state.activeLine === i ? " active" : "");
-    const cls = ln.score >= 0.9 ? "hi" : ln.score >= 0.7 ? "mid" : "lo";
+    const hasScore = typeof ln.score === "number";
+    const cls = !hasScore ? "na" : ln.score >= 0.9 ? "hi" : ln.score >= 0.7 ? "mid" : "lo";
     li.innerHTML = `
       <span class="ln-idx">${String(i + 1).padStart(2, "0")}</span>
       <span class="ln-text"></span>
-      <span class="ln-score ${cls}">${(ln.score * 100).toFixed(0)}</span>`;
+      <span class="ln-score ${cls}">${hasScore ? (ln.score * 100).toFixed(0) : "—"}</span>`;
     li.querySelector(".ln-text").textContent = ln.text;
     li.onclick = () => {
       state.activeLine = state.activeLine === i ? null : i;

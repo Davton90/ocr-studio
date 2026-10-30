@@ -139,6 +139,38 @@ Dijalankan lewat **RapidOCR 3.10** di atas **ONNX Runtime**.
 
 Total < 10 MB, dan mendukung 100+ bahasa dalam satu model — termasuk **Indonesia, Inggris, Mandarin, Jepang, Arab, Cyrillic**.
 
+### OvisOCR3 (opsional, engine ketiga)
+
+Engine VLM 0,8 B dari ATH-MaaS untuk dokumen sulit — tabel kompleks, KIE, tabel lintas halaman. **Tidak ikut di dalam exe**: bobot dan llama.cpp diunduh sekali ke `%LOCALAPPDATA%\OCRStudio\`.
+
+```bat
+.venv\Scripts\python.exe scripts\setup_ovis.py
+```
+
+| Bagian | Ukuran |
+|---|---:|
+| `OvisOCR3.Q4_K_M.gguf` | 529 MB |
+| `OvisOCR3.mmproj-Q8_0.gguf` (vision projector) | 116 MB |
+| llama.cpp `b12001` (win-cpu-x64) | 25 MB |
+| **Total** | **670 MB** |
+
+Butuh **dua file model**: `--model` untuk LLM dan `--mmproj` untuk vision projector. Projector tidak bisa dipinjam dari model lain — dimensinya harus cocok dengan decoder-nya.
+
+**Performa terukur di mesin ini (2 core, RAM 3,8 GB):**
+
+| Tahap | Waktu |
+|---|---:|
+| llama-server start + muat model | 15 s |
+| Vision encoding (1 gambar) | 23,6 s |
+| Generasi | ~1,3 token/detik |
+| **Total per halaman kecil** | **2,5–3,5 menit** |
+
+Angka itu bukan bug: model 0,8 B harus menulis output token demi token, dan RAM yang tersisa cuma ~0,4 GB sehingga Windows ikut swap. Di mesin 8 core / 16 GB angka ini turun drastis.
+
+Karena itu Indra tetap default; OvisOCR3 dipakai sesekali saat butuh akurasi struktur. Output-nya masuk ke tab **Markdown** dan kotak deteksi tetap tampil (tanpa skor per baris — VLM tidak memberi confidence).
+
+Lisensi model: **Apache 2.0** (boleh komersial).
+
 ### Kenapa ini, bukan yang lain
 
 | Kandidat | Alasan tidak dipakai di mesin ini |
@@ -149,6 +181,7 @@ Total < 10 MB, dan mendukung 100+ bahasa dalam satu model — termasuk **Indones
 | **DeepSeek-OCR, PaddleOCR-VL, dots.ocr, olmOCR** | VLM 0.9–3B parameter — butuh GPU, 8–24 GB VRAM. Tidak realistis di CPU |
 | **RapidOCR + PP-OCRv6** ✅ | ONNX, ~35 MB total dependency, akurasi setara PaddleOCR, jalan di 2 core |
 | **Indra OCR** ✅ | 8.8 MB, CPU-first, 2,5× lebih cepat dari PP-OCRv6 di mesin ini, plus layout & markdown |
+| **OvisOCR3** ✅ | 0,8 B, Apache 2.0, akurasi OmniDocBench 96,7 — tapi 2,5–3,5 menit/halaman di CPU 2 core |
 
 Catatan: varian `small` (default upstream) ternyata **6–7× lebih lambat** di mesin ini (18 s vs 2.8 s) dengan hasil yang sama pada uji coba. Karena itu `tiny` jadi default — bisa diganti lewat dropdown di pojok kanan atas.
 
